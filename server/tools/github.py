@@ -92,10 +92,12 @@ def github_search_issues(repo: str, query: str) -> dict:
 
 
 def github_list_recent_commits(repo: str, since_hours: int = 48) -> dict:
-    """List recent commits to a repository.
+    """List recent commits to a repository, newest first.
 
-    Use after you know roughly when an error started, to see what code changed
-    just before. `repo` is 'owner/name'; `since_hours` bounds the window.
+    Use to see what code changed just before an incident started. Set
+    `since_hours` to cover back before the error's first-seen time; if you are
+    unsure, use 48. If it returns no commits, widen `since_hours` and call again
+    (up to 720). `repo` is 'owner/name'.
     """
     try:
         repo = validate_repo(repo)
