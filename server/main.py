@@ -42,6 +42,23 @@ def db_schema() -> str:
     return logs.db_schema_text()
 
 
+@mcp.prompt()
+def investigate_incident(symptom: str, service: str = "checkout") -> str:
+    """Structured investigation steps for an incident symptom."""
+    return (
+        f"Investigate this production symptom: {symptom}\n\n"
+        f"1. Call logs_query_errors(service='{service}') to rank the top error "
+        "signatures.\n"
+        "2. Call logs_query_errors again with the top signature to get its hourly "
+        "timeline and first-seen time.\n"
+        "3. Call github_list_recent_commits with a window that starts before that "
+        "time; if it returns none, widen since_hours (up to 720).\n"
+        "4. Call github_search_issues for the signature.\n"
+        "5. Save the diagnosis with report_save_diagnosis: summary, timeline, "
+        "suspected cause (with commit SHA), evidence, and recommended fix."
+    )
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Incident Detective MCP server")
     parser.add_argument(

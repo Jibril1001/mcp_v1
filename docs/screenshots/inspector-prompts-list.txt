@@ -1,0 +1,20 @@
+$ npx @modelcontextprotocol/inspector --cli ".venv\Scripts\python.exe" -m server.main --method prompts/list
+
+{
+  "prompts": [
+    {
+      "name": "investigate_incident",
+      "description": "Structured investigation steps for an incident symptom.",
+      "arguments": [
+        {
+          "name": "symptom",
+          "required": true
+        },
+        {
+          "name": "service",
+          "required": false
+        }
+      ]
+    }
+  ]
+}
