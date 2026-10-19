@@ -1,0 +1,20 @@
+# resources/read db://schema
+
+CREATE TABLE deploys (
+  id INTEGER PRIMARY KEY,
+  ts TEXT NOT NULL,
+  service TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  notes TEXT
+)
+
+CREATE TABLE error_logs (
+  id INTEGER PRIMARY KEY,
+  ts TEXT NOT NULL,
+  service TEXT NOT NULL,
+  level TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  message TEXT NOT NULL
+)
+
+CREATE INDEX idx_logs_service_ts ON error_logs(service, ts)

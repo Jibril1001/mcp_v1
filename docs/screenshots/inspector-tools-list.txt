@@ -1,0 +1,25 @@
+# tools/list
+
+{
+  "tools": [
+    {
+      "name": "logs_query_errors",
+      "description": "Query the application error-log database.\n\nUse this FIRST to find which errors are spiking for a service. Without\n`signature`, returns the top error signatures with counts and first/last\nseen. With `signature`, returns an hourly timeline of that one error so you\ncan see exactly when it started.\n",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service": { "title": "Service", "type": "string" },
+          "since_hours": { "default": 24, "title": "Since Hours", "type": "integer" },
+          "limit": { "default": 10, "title": "Limit", "type": "integer" },
+          "signature": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "default": null,
+            "title": "Signature"
+          }
+        },
+        "required": ["service"],
+        "title": "logs_query_errorsArguments"
+      }
+    }
+  ]
+}

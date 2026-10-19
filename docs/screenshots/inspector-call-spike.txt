@@ -1,0 +1,11 @@
+# tools/call logs_query_errors service=checkout
+
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"service\": \"checkout\",\n  \"since_hours\": 24,\n  \"signatures\": [\n    {\n      \"signature\": \"PaymentTimeoutError\",\n      \"count\": 110,\n      \"first_seen\": \"2026-10-19T02:12:44+00:00\",\n      \"last_seen\": \"2026-10-19T07:56:34+00:00\"\n    },\n    {\n      \"signature\": \"SlowQueryWarning\",\n      \"count\": 11,\n      \"first_seen\": \"2026-10-18T19:16:01+00:00\",\n      \"last_seen\": \"2026-10-19T07:04:40+00:00\"\n    },\n    {\n      \"signature\": \"CacheMissWarning\",\n      \"count\": 9,\n      \"first_seen\": \"2026-10-18T18:34:14+00:00\",\n      \"last_seen\": \"2026-10-19T07:39:56+00:00\"\n    }\n  ]\n}"
+    }
+  ],
+  "isError": false
+}

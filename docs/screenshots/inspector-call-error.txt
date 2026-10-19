@@ -1,0 +1,11 @@
+# tools/call logs_query_errors service=chekout  (invalid)
+
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Error executing tool logs_query_errors: Unknown service 'chekout'. Valid services: checkout, auth, search."
+    }
+  ],
+  "isError": true
+}
