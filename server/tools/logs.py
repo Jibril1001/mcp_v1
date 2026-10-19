@@ -8,8 +8,9 @@ from datetime import datetime, timedelta, timezone
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from server import config
+from server import config, scopes
 from server.redact import redact_obj
+from server.scopes import require_scope
 from server.validation import (
     ValidationError,
     validate_limit,
@@ -34,6 +35,7 @@ def _connect() -> sqlite3.Connection:
 
 def db_schema_text() -> str:
     """Return the CREATE TABLE / CREATE INDEX statements as text."""
+    require_scope(scopes.LOGS_READ)
     try:
         conn = _connect()
     except sqlite3.Error as exc:
@@ -61,6 +63,7 @@ def logs_query_errors(
     seen. With `signature`, returns an hourly timeline of that one error so you
     can see exactly when it started.
     """
+    require_scope(scopes.LOGS_READ)
     try:
         service = validate_service(service)
         since_hours = validate_since_hours(since_hours)

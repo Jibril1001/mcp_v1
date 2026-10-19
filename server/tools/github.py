@@ -8,8 +8,9 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from mcp.server.mcpserver.exceptions import ToolError
 
-from server import config
+from server import config, scopes
 from server.redact import redact_obj
+from server.scopes import require_scope
 from server.validation import (
     ValidationError,
     validate_repo,
@@ -66,6 +67,7 @@ def github_search_issues(repo: str, query: str) -> dict:
     on a service. `repo` is 'owner/name'; `query` is free text, e.g. the error
     signature or a short symptom description.
     """
+    require_scope(scopes.GITHUB_READ)
     try:
         repo = validate_repo(repo)
     except ValidationError as exc:
@@ -99,6 +101,7 @@ def github_list_recent_commits(repo: str, since_hours: int = 48) -> dict:
     unsure, use 48. If it returns no commits, widen `since_hours` and call again
     (up to 720). `repo` is 'owner/name'.
     """
+    require_scope(scopes.GITHUB_READ)
     try:
         repo = validate_repo(repo)
         since_hours = validate_since_hours(since_hours)

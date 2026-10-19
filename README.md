@@ -43,7 +43,8 @@ Claude Desktop, Cursor, or our own client.
 
 - Python 3.10+ (developed on 3.13)
 - Node.js (only for the MCP Inspector)
-- A Google AI Studio API key ([console](https://aistudio.google.com/apikey))
+- An LLM key: **Groq** ([console.groq.com/keys](https://console.groq.com/keys),
+  default; free tier is ~1,000 requests/day) or Google AI Studio Gemini
 - Optional: a GitHub token (the public demo repo works without one, but a token
   raises the rate limit from 60 to 5000 requests/hour)
 - Optional: a Tavily key (the default web search, `ddgs`, needs no key)
@@ -69,7 +70,11 @@ Fill in `.env`:
 
 | Variable | Required | Notes |
 |---|---|---|
-| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | yes | Google AI Studio key |
+| `LLM_PROVIDER` | no | `groq` (default) or `gemini` |
+| `GROQ_API_KEY` | for groq | Groq key |
+| `GROQ_MODEL` | no | default `openai/gpt-oss-120b` |
+| `GROQ_BASE_URL` | no | default `https://api.groq.com/openai/v1` |
+| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | for gemini | Google AI Studio key |
 | `GEMINI_MODEL` | no | default `gemini-2.5-flash-lite` |
 | `GEMINI_BASE_URL` | no | default Gemini's OpenAI-compatible endpoint |
 | `GITHUB_TOKEN` | no | fine-grained PAT (`Contents: read`, `Issues: read`); raises rate limits |
@@ -78,6 +83,9 @@ Fill in `.env`:
 | `TAVILY_API_KEY` | no | only for Tavily |
 | `DB_PATH` | no | default `data/incidents.db` |
 | `REPORTS_DIR` | no | default `reports` |
+| `MCP_TOKEN_ADMIN` / `MCP_TOKEN_READONLY` | for HTTP | opaque bearer tokens; see "Run over HTTP" |
+| `MCP_TOKEN` | for HTTP client | token the client sends |
+| `MCP_PUBLIC_URL` | no | default `http://127.0.0.1:8000` |
 
 Build the incident database (timestamps are relative to *now*, so run it right
 before a demo):
@@ -88,12 +96,11 @@ python data/seed.py
 
 ### Free-tier note
 
-On the Gemini free tier, `gemini-2.5-flash` and `gemini-2.5-flash-lite` are
-limited to **20 requests/day per model**. One investigation uses ~5-6 calls, so
-that is only a couple of runs per day. To demo repeatedly, enable billing on the
-Google Cloud project or switch `GEMINI_MODEL` to another model with quota. The
-client retries transient 429/5xx errors and prints a clear message (not a
-traceback) when the daily quota is gone.
+The default provider is **Groq**, whose free tier allows roughly **1,000
+requests/day** — plenty, since one investigation uses ~5-6 calls. If you prefer
+Gemini, set `LLM_PROVIDER=gemini`; its free tier is only **20 requests/day per
+model**. In both cases the client retries transient 429/5xx errors with backoff
+and prints a clear message (not a traceback) when the daily quota is gone.
 
 ### Optional: the demo GitHub repo
 
@@ -148,11 +155,54 @@ run; the live files are written to `reports/`, which is gitignored).
 
 The agent loop:
 
-1. Connect to the server over stdio and call `list_tools`.
-2. Convert each MCP tool to the OpenAI function format and send it to Gemini.
+1. Connect to the server (stdio or HTTP) and call `list_tools`.
+2. Convert each MCP tool to the OpenAI function format and send it to the LLM.
 3. While the model returns tool calls, run them via `call_tool` and feed the
    results back (tool errors become `ERROR: ...` content).
 4. Stop when the model returns a final answer. Hard cap: 10 iterations.
+
+---
+
+## Run over HTTP with scoped access
+
+The server can run over Streamable HTTP instead of stdio. In HTTP mode it
+requires a bearer token and enforces per-tool scopes; stdio remains trusted
+local access.
+
+Generate two tokens and put them in `.env`:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # MCP_TOKEN_ADMIN
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # MCP_TOKEN_READONLY
+```
+
+Terminal 1 — start the server (serves `/mcp`):
+
+```bash
+python -m server.main --transport http --host 127.0.0.1 --port 8000
+```
+
+Terminal 2 — run the agent against it:
+
+```bash
+python -m client.agent "Checkout is failing for some users" \
+  --transport http --url http://127.0.0.1:8000/mcp --token <ADMIN_TOKEN>
+```
+
+Scopes:
+
+| Scope | Tools |
+|---|---|
+| `logs:read` | `logs_query_errors`, resource `db://schema` |
+| `github:read` | `github_search_issues`, `github_list_recent_commits` |
+| `web:read` | `web_search_fix` |
+| `report:write` | `report_save_diagnosis` |
+
+`MCP_TOKEN_ADMIN` gets all scopes; `MCP_TOKEN_READONLY` gets the three read
+scopes and is refused on the report tool with a tool-result error
+(`Token lacks scope report:write`). Requests with a missing or unknown token get
+`401 invalid_token`. Tokens are compared with `hmac.compare_digest`. Verified
+output is in [`docs/screenshots/http-auth.txt`](docs/screenshots/http-auth.txt).
 
 ---
 
@@ -193,6 +243,9 @@ Also exposed:
   long base64) while preserving 40-char commit SHAs.
 - **Path traversal blocked.** Report titles are slugified and the resolved path
   must stay inside `REPORTS_DIR`; markdown is capped at 50 KB.
+- **Authenticated HTTP with scoped access.** In HTTP mode every request needs a
+  bearer token (constant-time compared); tools enforce scopes and return
+  `Token lacks scope ...` instead of running (`server/auth.py`, `server/scopes.py`).
 
 ---
 
@@ -206,15 +259,16 @@ mcp_v1/
 │   ├── seed.py            # builds data/incidents.db (deterministic)
 │   └── demo_sha.txt       # culprit commit SHA used by the seed
 ├── server/
-│   ├── main.py            # MCPServer, registrations, transport flag
+│   ├── main.py            # build_server(), registrations, transport flag
 │   ├── config.py · validation.py · redact.py
+│   ├── auth.py · scopes.py  # bearer-token verifier + per-tool scopes (HTTP)
 │   └── tools/ logs.py · github.py · web.py · reports.py
 ├── client/
-│   ├── agent.py           # CLI + agent loop
+│   ├── agent.py           # CLI + agent loop (stdio or HTTP)
 │   ├── mcp_bridge.py      # MCP tool defs -> OpenAI function format
-│   └── llm.py             # Gemini adapter (single provider-specific file)
-├── tests/ test_validation.py · test_redact.py · test_no_stdout.py
-├── docs/ PLANT.md · screenshots/
+│   └── llm.py             # Gemini/Groq adapter (single provider-specific file)
+├── tests/ test_validation.py · test_redact.py · test_no_stdout.py · test_auth.py
+├── docs/ PLANT.md · sample_report.md · screenshots/
 └── reports/               # generated, gitignored
 ```
 
@@ -234,6 +288,9 @@ python -m pytest -q
 | ≥2 external resources | SQLite log DB, GitHub REST API, web search |
 | MCP server with tools (unique names, what/when descriptions, typed inputs, errors in result) | `server/tools/`, `server/main.py` |
 | Own MCP client: connect → list → pass to LLM → run tool calls → return results | `client/agent.py`, `client/mcp_bridge.py` |
+| Resource and prompt in addition to tools | `db://schema` resource + `investigate_incident` prompt (`server/main.py`) |
+| Streamable HTTP (not just stdio) | `python -m server.main --transport http`; client `--transport http` |
+| Authentication and scoped access | `server/auth.py`, `server/scopes.py`; see "Run over HTTP" |
 | Tools integrated into the app | End-to-end demo below |
 | Server tested with the Inspector | `docs/screenshots/` |
 | README with setup + tool list with example calls | This file |
@@ -250,11 +307,12 @@ diagnosis naming commit `e2c335c`.
 
 ## Limitations and future work
 
-- **Streamable HTTP transport + scoped bearer tokens** are scaffolded
-  (`--transport http`) but the auth layer is not implemented. Production would
-  use OAuth 2.1.
+- **HTTP auth uses static bearer tokens** from the environment. Production would
+  use OAuth 2.1 with an authorization server; the SDK's OAuth hooks are the
+  upgrade path.
 - Web search depends on `ddgs` backends and can be flaky; Tavily is supported as
   an alternative via `WEB_SEARCH_PROVIDER=tavily`.
-- The free Gemini tier is small (20 requests/day/model); see the note above.
+- The Gemini free tier is small (20 requests/day/model); Groq is the default for
+  that reason.
 - The seed data is synthetic. Point `DB_PATH` at a real log export to use it for
   real.

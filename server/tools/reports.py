@@ -8,8 +8,9 @@ import time
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from server import config
+from server import config, scopes
 from server.redact import redact
+from server.scopes import require_scope
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def report_save_diagnosis(title: str, markdown: str) -> dict:
     summary; `markdown` is the full report (summary, timeline, suspected cause
     with commit SHA, evidence, recommended fix). Returns the saved file path.
     """
+    require_scope(scopes.REPORT_WRITE)
     if not isinstance(title, str) or not title.strip():
         raise ToolError("title must be a non-empty string.")
     if len(title) > config.MAX_TITLE_LEN:

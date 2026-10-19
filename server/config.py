@@ -27,6 +27,11 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
 WEB_SEARCH_PROVIDER = os.environ.get("WEB_SEARCH_PROVIDER", "ddgs").strip().lower()
 
+# Streamable HTTP auth. Tokens are opaque strings; leave blank to disable.
+MCP_TOKEN_ADMIN = os.environ.get("MCP_TOKEN_ADMIN", "").strip()
+MCP_TOKEN_READONLY = os.environ.get("MCP_TOKEN_READONLY", "").strip()
+MCP_PUBLIC_URL = os.environ.get("MCP_PUBLIC_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+
 ALLOWED_SERVICES = ("checkout", "auth", "search")
 
 MIN_SINCE_HOURS = 1

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import anyio
 from mcp import Client, StdioServerParameters
+from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 from mcp.types import TextContent
 
 from client import llm
@@ -22,6 +23,7 @@ from client.mcp_bridge import mcp_tools_to_openai
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_ITERATIONS = 10
+DEFAULT_HTTP_URL = os.environ.get("MCP_URL", "http://127.0.0.1:8000/mcp").strip()
 
 SYSTEM_PROMPT = (
     "You are Incident Detective, an on-call engineer. Investigate AUTONOMOUSLY "
@@ -77,16 +79,56 @@ def _log(verbose: bool, message: str) -> None:
         print(message, file=sys.stderr, flush=True)
 
 
-async def run_agent(user_input: str, model: str | None, verbose: bool) -> int:
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "server.main"],
-        env=_server_env(),
-        cwd=str(ROOT),
-    )
+class HTTPTransport:
+    """Streamable HTTP transport that sends a bearer token on every request."""
+
+    def __init__(self, url: str, token: str) -> None:
+        self.url = url
+        self.token = token
+        self._http = None
+        self._transport = None
+
+    async def __aenter__(self):
+        self._http = create_mcp_http_client(
+            headers={"Authorization": f"Bearer {self.token}"}
+        )
+        await self._http.__aenter__()
+        self._transport = streamable_http_client(self.url, http_client=self._http)
+        return await self._transport.__aenter__()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        try:
+            return await self._transport.__aexit__(exc_type, exc, tb)
+        finally:
+            await self._http.__aexit__(exc_type, exc, tb)
+
+
+async def run_agent(
+    user_input: str,
+    model: str | None,
+    verbose: bool,
+    transport: str = "stdio",
+    url: str = DEFAULT_HTTP_URL,
+    token: str | None = None,
+) -> int:
+    if transport == "http":
+        if not token:
+            print(
+                "HTTP mode requires a bearer token: pass --token or set MCP_TOKEN in .env.",
+                file=sys.stderr,
+            )
+            return 1
+        target = HTTPTransport(url, token)
+    else:
+        target = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "server.main"],
+            env=_server_env(),
+            cwd=str(ROOT),
+        )
     llm_client = llm.make_client()
 
-    async with Client(params) as client:
+    async with Client(target) as client:
         tools_result = await client.list_tools()
         tools = mcp_tools_to_openai(tools_result.tools)
         _log(verbose, f"Discovered {len(tools)} MCP tools: " + ", ".join(t.name for t in tools_result.tools))
@@ -102,7 +144,7 @@ async def run_agent(user_input: str, model: str | None, verbose: bool) -> int:
 
         empty_retries = 0
         for step in range(1, MAX_ITERATIONS + 1):
-            _log(verbose, f"[step {step}] asking {llm.GEMINI_MODEL}...")
+            _log(verbose, f"[step {step}] asking {llm.ACTIVE_MODEL}...")
             response = llm.complete(llm_client, messages, tools, model=model)
             message = response.choices[0].message
             tool_calls = message.tool_calls or []
@@ -184,10 +226,44 @@ async def _main_async(argv: list[str] | None) -> int:
         description="Ask Incident Detective to investigate a production problem.",
     )
     parser.add_argument("symptom", help="e.g. \"Checkout is failing for some users\"")
-    parser.add_argument("--model", default=None, help="Override GEMINI_MODEL")
+    parser.add_argument("--model", default=None, help="Override the provider's model")
     parser.add_argument("--verbose", action="store_true", help="Show the tool-call trace")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="stdio launches the server locally; http connects to a running server",
+    )
+    parser.add_argument(
+        "--url",
+        default=DEFAULT_HTTP_URL,
+        help=f"Streamable HTTP endpoint (default {DEFAULT_HTTP_URL})",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("MCP_TOKEN"),
+        help="Bearer token for HTTP mode (default MCP_TOKEN)",
+    )
     args = parser.parse_args(argv)
-    return await run_agent(args.symptom, args.model, args.verbose)
+    return await run_agent(
+        args.symptom,
+        args.model,
+        args.verbose,
+        transport=args.transport,
+        url=args.url,
+        token=args.token,
+    )
+
+
+def _configure_stdio() -> None:
+    """Use UTF-8 on all platforms so model output never crashes the console."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
 
 
 def _flatten_error(exc: BaseException) -> str:
@@ -198,6 +274,7 @@ def _flatten_error(exc: BaseException) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     try:
         return anyio.run(_main_async, argv)
     except SystemExit:

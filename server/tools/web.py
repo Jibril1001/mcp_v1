@@ -7,8 +7,9 @@ import logging
 import httpx
 from mcp.server.mcpserver.exceptions import ToolError
 
-from server import config
+from server import config, scopes
 from server.redact import redact_obj
+from server.scopes import require_scope
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ def web_search_fix(error_message: str) -> dict:
     to see how others have resolved it. Returns a few result titles, URLs, and
     snippets. Prefer official docs and well-known sources.
     """
+    require_scope(scopes.WEB_READ)
     if not isinstance(error_message, str) or not error_message.strip():
         raise ToolError("error_message must be a non-empty string.")
     query = error_message.strip()[: config.MAX_SEARCH_QUERY_LEN]

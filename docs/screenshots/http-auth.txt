@@ -1,0 +1,35 @@
+# Streamable HTTP + scoped bearer tokens - captured evidence
+
+Server: `python -m server.main --transport http --host 127.0.0.1 --port 8000`
+(Serves the MCP endpoint at `/mcp`.)
+
+## 1. No token -> 401
+
+$ curl -s -w "\nHTTP %{http_code}\n" http://127.0.0.1:8000/mcp
+{"error": "invalid_token", "error_description": "Authentication required"}
+HTTP 401
+
+## 2. Unknown token -> 401
+
+$ curl -s -w "\nHTTP %{http_code}\n" -H "Authorization: Bearer nope" http://127.0.0.1:8000/mcp
+{"error": "invalid_token", "error_description": "Authentication required"}
+HTTP 401
+
+## 3. Scoped access via the MCP client
+
+Readonly token calling report_save_diagnosis:
+
+    readonly: tools=5 report_is_error=True msg='... Token lacks scope report:write'
+
+Admin token calling the same tool:
+
+    admin: tools=5 report_is_error=False msg='{"saved_path": ".../reports/auth-check-admin-....md", ...}'
+
+## 4. Full agent over HTTP with the admin token
+
+$ python -m client.agent "Checkout is failing for some users since this morning" \
+    --transport http --url http://127.0.0.1:8000/mcp
+
+The checkout failures were caused by a recent change that dramatically reduced
+the payment client timeout, leading to a surge in PaymentTimeoutError incidents.
+The diagnosis, evidence, and fix recommendation have been saved as a report.
