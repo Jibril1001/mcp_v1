@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Demo target repo (separate git repo, cloned locally)
+test_repo/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Generated data / outputs
+data/*.db
+reports/
+*.log
