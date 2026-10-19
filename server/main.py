@@ -12,7 +12,7 @@ import sys
 
 from mcp.server import MCPServer
 
-from server.tools import logs
+from server.tools import github, logs, reports, web
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +30,10 @@ INSTRUCTIONS = (
 mcp = MCPServer("Incident Detective", instructions=INSTRUCTIONS)
 
 mcp.add_tool(logs.logs_query_errors)
+mcp.add_tool(github.github_search_issues)
+mcp.add_tool(github.github_list_recent_commits)
+mcp.add_tool(web.web_search_fix)
+mcp.add_tool(reports.report_save_diagnosis)
 
 
 @mcp.resource("db://schema")
